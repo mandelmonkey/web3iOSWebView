@@ -14,10 +14,14 @@
 
 @end
 
-@implementation browser
+@implementation browser   
 WKWebView * webView;
 TiApp* viewController;
 NSString* currentData;
+receivedMessage masterReceiver;
+
+receivedMessage navigationReceiver;
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     // Do any additional setup after loading the view.
@@ -29,10 +33,16 @@ NSString* currentData;
 }
 
  
--(WKWebView*)getBrowser:(double)width andHeight:(double)height andUrl:(NSString*)url andController:(TiApp*)controller andScript:(NSString*)scriptContent{
+-(WKWebView*)getBrowser:(double)width andHeight:(double)height andUrl:(NSString*)url andController:(TiApp*)controller andScript:(NSString*)scriptContent andReceivedMessage:(receivedMessage)receivedMessage andNavigationMessage:(receivedMessage)navigationMessage{
    
+    masterReceiver = receivedMessage;
+    navigationReceiver = navigationMessage;
     viewController = controller;
     
+    if(webView != NULL){
+        webView = NULL;
+    }
+    /*
     NSSet *websiteDataTypes
     = [NSSet setWithArray:@[
                             WKWebsiteDataTypeDiskCache,
@@ -51,7 +61,7 @@ NSString* currentData;
     //// Execute
     [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:websiteDataTypes modifiedSince:dateFrom completionHandler:^{
         // Done
-    }];
+    }];*/
     
     WKPreferences * preferences = [[WKPreferences alloc] init];
     preferences.javaScriptEnabled = true;
@@ -59,20 +69,19 @@ NSString* currentData;
    // [[NSUserDefaults standardUserDefaults] registerDefaults:[NSDictionary dictionaryWithObjectsAndKeys:@"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36",@"UserAgent", nil]];
     
     WKWebViewConfiguration * configuration = [[WKWebViewConfiguration alloc] init];
-   /* NSString * scriptUrl = [[NSBundle mainBundle] pathForResource:@"web3indie" ofType:@"txt"];
-    NSError *error;
-    NSString * scriptContent = [NSString stringWithContentsOfFile:scriptUrl encoding:NSUTF8StringEncoding error:&error];
     
-    if(error != NULL){
-        return NULL;
-    }*/
+  
+ 
     WKUserScript * script = [[WKUserScript alloc] initWithSource:scriptContent injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:true];
     [configuration.userContentController addUserScript:script];
     configuration.preferences = preferences;
     
+    [configuration.userContentController addScriptMessageHandler:self name:@"setTask"];
+    
     
     webView = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, width, height) configuration:configuration];
       webView.UIDelegate = self;
+    webView.navigationDelegate = self;
     
     if([url rangeOfString:@"/IndieSquare.app/"].location != NSNotFound){
 
@@ -91,7 +100,66 @@ NSString* currentData;
     
 }
 
+
 #pragma mark - WKUIDelegate
+
+- (WKWebView *)webView:(WKWebView *)webView createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration forNavigationAction:(WKNavigationAction *)navigationAction windowFeatures:(WKWindowFeatures *)windowFeatures
+{
+    
+    if (!navigationAction.targetFrame.isMainFrame) {
+        
+        [webView loadRequest:navigationAction.request];
+    }
+    
+    return nil;
+}
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation
+{
+    navigationReceiver(@"started");
+    
+}
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation
+{
+    navigationReceiver(@"finished");
+}
+
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error
+{
+     navigationReceiver(@"failed");
+}
+
+
+- (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message
+{
+    
+    
+    id body = message.body;
+    NSString *keyPath = message.name;
+    
+    if ([body isKindOfClass:[NSDictionary class]]) {
+        if ([keyPath isEqualToString:@"setTask"]) {
+            
+            NSLog(@"body: %@", body);
+            
+            NSError *error;
+            NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body
+                                                               options:NSJSONWritingPrettyPrinted // Pass 0 if you don't care about the readability of the generated string
+                                                                 error:&error];
+            
+            if (! jsonData) {
+                masterReceiver(@"error");
+                NSLog(@"Got an error: %@", error);
+            } else {
+                NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                 masterReceiver(jsonString);
+            }
+            
+           
+            
+        }
+    }
+}
 
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView
 {
@@ -113,6 +181,19 @@ NSString* currentData;
    [viewController showModalController:alertController animated:YES];
     }
 }
+
+-(void)showShareSheet:(NSString*)content andController:(TiApp*)controller{
+    
+    UIActivityViewController *cont = [[UIActivityViewController alloc] initWithActivityItems:@[content] applicationActivities:nil];
+    
+ 
+    [controller showModalController:cont animated:YES];
+   /* [controller presentViewController:cont animated:YES completion:^{
+         // executes after the user selects something
+     }];*/
+    
+   }
+
 
 
 /*
